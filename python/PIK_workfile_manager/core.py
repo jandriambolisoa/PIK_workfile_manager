@@ -15,7 +15,7 @@ from rez_production_context.contexts import (
 
 from PIK_path_manager import ProductionPath
 
-from python.PIK_workfile_manager.constants import MAX_ENTITY_DISPLAY, MAX_ENTITY_LOAD
+from PIK_workfile_manager.constants import MAX_ENTITY_DISPLAY, MAX_ENTITY_LOAD
 
 
 class QABCMeta(type(QtCore.QObject), ABCMeta):

@@ -14,12 +14,13 @@ from rez_production_context import get_context, get_context_from_env
 
 from PIK_path_manager import ProductionPath
 
-from python.PIK_workfile_manager.constants import (
+from PIK_workfile_manager.constants import (
     OPEN_WINDOW_SIZE,
     DEFAULT_FILENAME,
-    MAX_ENTITY_DISPLAY, MAX_SCENE_NAME_LENGTH,
+    MAX_ENTITY_DISPLAY,
+    MAX_SCENE_NAME_LENGTH,
 )
-from python.PIK_workfile_manager.core import QABCMeta, find_closest_strings
+from PIK_workfile_manager.core import QABCMeta, find_closest_strings
 
 
 class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
@@ -128,7 +129,9 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         )
         self.scene_list.itemSelectionChanged.connect(self._populate_version_list)
         self.scene_list.itemSelectionChanged.connect(self._update_file_to_open_display)
-        self.version_list.itemSelectionChanged.connect(self._update_file_to_open_display)
+        self.version_list.itemSelectionChanged.connect(
+            self._update_file_to_open_display
+        )
         self.open_button.clicked.connect(self.open_workfile)
         self.cancel_button.clicked.connect(self.close_window)
 
@@ -443,7 +446,9 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
 
         # --- Connections ---
         self.entity_combobox.currentIndexChanged.connect(self._update_version_spinbox)
-        self.entity_combobox.currentIndexChanged.connect(self._update_file_to_save_display)
+        self.entity_combobox.currentIndexChanged.connect(
+            self._update_file_to_save_display
+        )
 
         self.scene_input.textChanged.connect(self._update_version_spinbox)
         self.scene_input.textChanged.connect(self._update_file_to_save_display)
