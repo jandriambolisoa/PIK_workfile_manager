@@ -17,7 +17,7 @@ from PIK_path_manager import ProductionPath
 from python.PIK_workfile_manager.constants import (
     OPEN_WINDOW_SIZE,
     DEFAULT_FILENAME,
-    MAX_ENTITY_DISPLAY,
+    MAX_ENTITY_DISPLAY, MAX_SCENE_NAME_LENGTH,
 )
 from python.PIK_workfile_manager.core import QABCMeta, find_closest_strings
 
@@ -121,21 +121,21 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         main_layout.addLayout(button_layout)
 
         # --- Connections ---
-        self.entity_combobox.currentIndexChanged.connect(self.populate_scene_name_list)
-        self.entity_combobox.currentIndexChanged.connect(self.populate_version_list)
+        self.entity_combobox.currentIndexChanged.connect(self._populate_scene_name_list)
+        self.entity_combobox.currentIndexChanged.connect(self._populate_version_list)
         self.entity_combobox.currentIndexChanged.connect(
-            self.update_file_to_open_display
+            self._update_file_to_open_display
         )
-        self.scene_list.itemSelectionChanged.connect(self.populate_version_list)
-        self.scene_list.itemSelectionChanged.connect(self.update_file_to_open_display)
-        self.version_list.itemSelectionChanged.connect(self.update_file_to_open_display)
+        self.scene_list.itemSelectionChanged.connect(self._populate_version_list)
+        self.scene_list.itemSelectionChanged.connect(self._update_file_to_open_display)
+        self.version_list.itemSelectionChanged.connect(self._update_file_to_open_display)
         self.open_button.clicked.connect(self.open_workfile)
         self.cancel_button.clicked.connect(self.close_window)
 
         # Initiate the UI datas
-        self.populate_entity_list()
+        self._populate_entity_list()
 
-    def populate_entity_list(self):
+    def _populate_entity_list(self):
         """
         Populate the entity combobox with entities related to the current context.
         The closest matches to the current entity are placed first.
@@ -164,7 +164,7 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
             self.entity_combobox.addItems(items_to_add)
             return
 
-    def populate_scene_name_list(self):
+    def _populate_scene_name_list(self):
         """
         Populate the scene list with scene names available for the selected entity.
 
@@ -215,7 +215,7 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
             self.scene_list.addItems(list(existing_scene_names))
 
     @QtCore.Slot()
-    def populate_version_list(self):
+    def _populate_version_list(self):
         """
         Populate the version list for the currently selected scene.
 
@@ -272,7 +272,7 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         self.version_list.addItems(versions)
 
     @QtCore.Slot()
-    def update_file_to_open_display(self):
+    def _update_file_to_open_display(self):
         """
         Update the displayed workfile path from the current UI selections.
 
@@ -332,6 +332,279 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
     def close_window(self):
         """
         Close the workfile browser window.
+
+        Subclasses may extend this method to perform software-specific cleanup before
+        closing the window.
+        """
+        self.close()
+
+
+class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
+    """
+    Base window for creating and saving production workfiles.
+
+    This widget provides a generic user interface for workfile creation in an
+    Asset or Shot context. The user selects a target entity, enters a scene name,
+    chooses a version number, and reviews the generated filepath before saving.
+
+    Subclasses must implement the software-specific save logic by overriding
+    `save_workfile()`. They may also customize the window closing behavior by
+    overriding `close_window()`.
+
+    Args:
+        parent: Optional parent widget.
+        software: Name of the target DCC software.
+        extension: Workfile extension, with or without a leading dot.
+
+    Raises:
+        RuntimeError: If the current context is not an Asset or Shot.
+        RuntimeError: If the current context has no associated step.
+    """
+
+    def __init__(self, parent=None, software=None, extension=None):
+        super().__init__(parent)
+        self.context = get_context_from_env()
+        self.software = software
+        self.extension = extension.lower().lstrip(".")
+
+        if not isinstance(self.context, Asset) or not isinstance(self.context, Shot):
+            raise RuntimeError(
+                "Save file is not supported in this context. Must be an Asset or a Shot context."
+            )
+
+        if not self.context.step:
+            raise RuntimeError(
+                "Save file is not supported in this context. A step is required."
+            )
+
+        self.setWindowTitle("Save Production Workfile")
+        self.resize(*OPEN_WINDOW_SIZE)
+        self.setMinimumSize(*OPEN_WINDOW_SIZE)
+        self.setWindowIcon(
+            QtGui.QIcon(os.path.join(Path(__file__).parent, "icons", "piktura.png"))
+        )
+
+        # --- Widgets ---
+        self.entity_label = QtWidgets.QLabel("Entity :")
+        self.entity_combobox = QtWidgets.QComboBox()
+        self.entity_combobox.setMaxVisibleItems(MAX_ENTITY_DISPLAY)
+
+        self.scene_label = QtWidgets.QLabel("Scene name :")
+        self.scene_input = QtWidgets.QLineEdit()
+        self.scene_input.setPlaceholderText("Enter a scene name...")
+        self.scene_input.setMaxLength(MAX_SCENE_NAME_LENGTH)
+        self.scene_input.setText(DEFAULT_FILENAME)
+
+        self.version_label = QtWidgets.QLabel("Version :")
+        self.version_spinbox = QtWidgets.QSpinBox()
+        self.version_spinbox.setMinimum(1)
+        self.version_spinbox.setMaximum(999)
+        self.version_spinbox.setValue(1)
+        self.version_spinbox.setDisplayIntegerBase(10)
+        self.version_spinbox.setAlignment(QtCore.Qt.AlignCenter)
+
+        self.file_to_save_label = QtWidgets.QLabel("File to save :")
+        self.file_to_save_display = QtWidgets.QLabel("")
+        self.file_to_save_display.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse
+        )
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.save_button = QtWidgets.QPushButton("Save")
+        self.save_button.setDefault(True)
+
+        # --- Layouts ---
+        entity_layout = QtWidgets.QHBoxLayout()
+        entity_layout.addWidget(self.entity_label)
+        entity_layout.addWidget(self.entity_combobox)
+
+        scene_layout = QtWidgets.QHBoxLayout()
+        scene_layout.addWidget(self.scene_label, alignment=QtCore.Qt.AlignTop)
+        scene_layout.addWidget(self.scene_input)
+
+        version_layout = QtWidgets.QHBoxLayout()
+        version_layout.addWidget(self.version_label)
+        version_layout.addWidget(self.version_spinbox)
+
+        file_layout = QtWidgets.QHBoxLayout()
+        file_layout.addWidget(self.file_to_save_label)
+        file_layout.addWidget(self.file_to_save_display)
+
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.save_button)
+
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.addLayout(entity_layout)
+        main_layout.addLayout(scene_layout)
+        main_layout.addLayout(version_layout)
+        main_layout.addLayout(file_layout)
+        main_layout.addLayout(button_layout)
+
+        # --- Connections ---
+        self.entity_combobox.currentIndexChanged.connect(self._update_version_spinbox)
+        self.entity_combobox.currentIndexChanged.connect(self._update_file_to_save_display)
+
+        self.scene_input.textChanged.connect(self._update_version_spinbox)
+        self.scene_input.textChanged.connect(self._update_file_to_save_display)
+
+        self.version_spinbox.valueChanged.connect(self._update_file_to_save_display)
+
+        self.cancel_button.clicked.connect(self.close_window)
+        self.save_button.clicked.connect(self.save_workfile)
+
+        # Initiate the UI datas
+        self._populate_entity_list()
+
+    def _populate_entity_list(self):
+        """
+        Populate the entity combobox with entities related to the current context.
+        The closest matches to the current entity are placed first.
+        """
+        self.entity_combobox.clear()
+
+        if isinstance(self.context, Asset):
+            tmp_context = get_context(
+                project=self.context.project, category=self.context.asset_type
+            )
+            items_to_add = find_closest_strings(
+                self.context.name,
+                [asset.name for asset in tmp_context.assets],
+            )
+            self.entity_combobox.addItems(items_to_add)
+            return
+
+        if isinstance(self.context, Shot):
+            tmp_context = get_context(
+                project=self.context.project, category=self.context.sequence
+            )
+            items_to_add = find_closest_strings(
+                self.context.name,
+                [shot.name for shot in tmp_context.shots],
+            )
+            self.entity_combobox.addItems(items_to_add)
+            return
+
+    def _update_version_spinbox(self):
+        """
+        Update the version spinbox with the next available version number for the
+        currently selected entity and scene name.
+
+        The workfile directory is scanned for matching workfiles and the spinbox is
+        set to the highest existing version plus one. If no matching workfiles are
+        found, the version is reset to 1.
+        """
+        # Get all available versions for the selected scene name
+        if isinstance(self.context, Asset):
+            filepath = ProductionPath(
+                {
+                    "project": self.context.project,
+                    "asset_type": self.context.asset_type,
+                    "asset_name": self.entity_combobox.currentText(),
+                    "step": self.context.step,
+                    "software": self.software,
+                    "extension": self.extension,
+                    "scene_name": self.scene_input.text(),
+                    "version": "v*",
+                }
+            ).from_data()
+
+        else:
+            # Shot context
+            filepath = ProductionPath(
+                {
+                    "project": self.context.project,
+                    "sequence": self.context.sequence,
+                    "shot": self.entity_combobox.currentText(),
+                    "step": self.context.step,
+                    "software": self.software,
+                    "extension": self.extension,
+                    "scene_name": self.scene_input.text(),
+                    "version": "v*",
+                }
+            ).from_data()
+
+        versions = sorted(filepath.parent.glob(filepath.name), reverse=True)
+
+        if not versions:
+            self.version_spinbox.setValue(1)
+            return
+
+        self.version_spinbox.setValue(int(versions[0][1:]) + 1)
+
+    @QtCore.Slot()
+    def _update_file_to_save_display(self):
+        """
+        Update the displayed filepath preview based on the current entity selection,
+        scene name, version number, software, and extension.
+
+        The generated filepath is displayed in the file preview label and represents
+        the exact location where the workfile will be saved.
+        """
+        self.file_to_save_display.clear()
+
+        if isinstance(self.context, Asset):
+            filepath = ProductionPath(
+                {
+                    "project": self.context.project,
+                    "asset_type": self.context.asset_type,
+                    "asset_name": self.entity_combobox.currentText(),
+                    "step": self.context.step,
+                    "software": self.software,
+                    "extension": self.extension,
+                    "scene_name": self.scene_input.text(),
+                    "version": f"v{self.version_spinbox.value():03d}",
+                }
+            ).from_data()
+
+        else:
+            # Shot context
+            filepath = ProductionPath(
+                {
+                    "project": self.context.project,
+                    "sequence": self.context.sequence,
+                    "shot": self.entity_combobox.currentText(),
+                    "step": self.context.step,
+                    "software": self.software,
+                    "extension": self.extension,
+                    "scene_name": self.scene_input.text(),
+                    "version": f"v{self.version_spinbox.value():03d}",
+                }
+            ).from_data()
+
+        self.file_to_save_display.setText(filepath.as_posix())
+
+    @QtCore.Slot()
+    @abstractmethod
+    def save_workfile(self):
+        """
+        Prepare the filepath for saving a new production workfile.
+
+        This base implementation validates that the target workfile does not already
+        exist, creates the required parent directories, and returns the resolved
+        filepath. Subclasses should call this method before performing any
+        software-specific save operation.
+
+        Raises:
+            FileExistsError: If a workfile already exists at the target filepath.
+
+        Returns:
+            str: Full filepath where the workfile should be saved.
+        """
+        to_save = Path(self.file_to_save_display.text())
+
+        if to_save.exists():
+            raise FileExistsError(f"File already exists: {to_save}")
+
+        to_save.mkdir(parents=True, exist_ok=True)
+
+        return to_save.as_posix()
+
+    @QtCore.Slot()
+    @abstractmethod
+    def close_window(self):
+        """
+        Close the save workfile window.
 
         Subclasses may extend this method to perform software-specific cleanup before
         closing the window.
