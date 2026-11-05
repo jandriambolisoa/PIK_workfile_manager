@@ -1,7 +1,9 @@
 import os
+import platform
 from PySide6 import QtCore, QtWidgets, QtGui
 from pathlib import Path
 
+from abc import abstractmethod
 from rez_production_context.contexts import (
     Studio,
     Project,
@@ -16,14 +18,49 @@ from PIK_path_manager import ProductionPath
 
 from PIK_workfile_manager.constants import (
     OPEN_WINDOW_SIZE,
+    SAVE_WINDOW_SIZE,
     DEFAULT_FILENAME,
-    MAX_ENTITY_DISPLAY,
     MAX_SCENE_NAME_LENGTH,
+    LIST_FONT_SIZE,
+    LIST_ITEMS_SIZE,
 )
-from PIK_workfile_manager.core import QABCMeta, find_closest_strings
+from PIK_workfile_manager.core import QABCMeta, get_existing_scene_names, get_existing_scene_versions
 
 
-class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
+class _VersionPopup(QtWidgets.QListWidget):
+    """
+    Frameless popup list that closes on item activation, Escape, or when it
+    loses focus (e.g. click outside, host application stealing focus).
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        # Qt.Popup already implies a frameless top-level window.
+        self.setWindowFlags(QtCore.Qt.Popup)
+        self.itemClicked.connect(self.hide)
+        self.itemActivated.connect(self.hide)
+        self.setStyleSheet("""
+            QListWidget {
+                font-size: %spt;
+            }
+            QListWidget::item {
+                height: %spx;
+            }
+        """ %(LIST_FONT_SIZE, LIST_ITEMS_SIZE))
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Escape:
+            self.hide()
+            return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.hide()
+
+
+class FileOpenWindow(QtWidgets.QMainWindow, metaclass=QABCMeta):
     """
     Base window for browsing and opening production workfiles.
 
@@ -52,7 +89,10 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         self.software = software
         self.extension = extension.lower().lstrip(".")
 
-        if not isinstance(self.context, Asset) or not isinstance(self.context, Shot):
+        self.root = ProductionPath._canonical_roots["/L33D/"][platform.system().lower()]
+        # self.root = "//SRV-W25-FIL-03/L33D/"
+
+        if not isinstance(self.context, Asset) and not isinstance(self.context, Shot):
             raise RuntimeError(
                 "Open file is not supported in this context. Must be an Asset or a Shot context."
             )
@@ -70,102 +110,117 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         )
 
         # --- Widgets ---
-        self.entity_label = QtWidgets.QLabel("Entity :")
-        self.entity_combobox = QtWidgets.QComboBox()
-        self.entity_combobox.setMaxVisibleItems(MAX_ENTITY_DISPLAY)
+        if isinstance(self.context, Asset):
+            self.context_label = QtWidgets.QLabel(
+                f"Project: {self.context.project.name} | Asset type: {self.context.asset_type.name} | Asset: {self.context.name} | Step: {self.context.step}"
+            )
+        else:
+            self.context_label = QtWidgets.QLabel(
+                f"Project: {self.context.project.name} | Sequence: {self.context.sequence.name} | Shot: {self.context.name} | Step: {self.context.step}"
+            )
 
         self.scene_label = QtWidgets.QLabel("Scenes :")
         self.scene_list = QtWidgets.QListWidget()
         self.scene_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-
-        self.version_label = QtWidgets.QLabel("Versions :")
-        self.version_list = QtWidgets.QListWidget()
-        self.version_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.scene_list.setStyleSheet("""
+            QListWidget {
+                font-size: %spt;
+            }
+            QListWidget::item {
+                height: %spx;
+            }
+        """ %(LIST_FONT_SIZE, LIST_ITEMS_SIZE))
 
         self.file_to_open_label = QtWidgets.QLabel("File to open :")
         self.file_to_open_display = QtWidgets.QLabel("")
         self.file_to_open_display.setTextInteractionFlags(
             QtCore.Qt.TextSelectableByMouse
         )
+        self.file_to_open_display.setWordWrap(True)
 
         self.cancel_button = QtWidgets.QPushButton("Cancel")
         self.open_button = QtWidgets.QPushButton("Open")
         self.open_button.setDefault(True)
+        self.open_button.setAutoDefault(True)
+        self.open_button.setFocus()
 
         # --- Layouts ---
-        entity_layout = QtWidgets.QHBoxLayout()
-        entity_layout.addWidget(self.entity_label)
-        entity_layout.addWidget(self.entity_combobox)
+        context_layout = QtWidgets.QHBoxLayout()
+        context_layout.addWidget(self.context_label)
 
         scene_layout = QtWidgets.QHBoxLayout()
         scene_layout.addWidget(self.scene_label, alignment=QtCore.Qt.AlignTop)
         scene_layout.addWidget(self.scene_list)
 
-        version_layout = QtWidgets.QHBoxLayout()
-        version_layout.addWidget(self.version_label, alignment=QtCore.Qt.AlignTop)
-        version_layout.addWidget(self.version_list)
-
         file_layout = QtWidgets.QHBoxLayout()
         file_layout.addWidget(self.file_to_open_label)
-        file_layout.addWidget(self.file_to_open_display)
+        file_layout.addWidget(self.file_to_open_display, stretch=1)
         file_layout.addStretch()
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.open_button)
 
-        main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.addLayout(entity_layout)
+        central_widget = QtWidgets.QWidget()
+        main_layout = QtWidgets.QVBoxLayout(central_widget)
+        main_layout.addLayout(context_layout)
         main_layout.addLayout(scene_layout)
-        main_layout.addLayout(version_layout)
         main_layout.addLayout(file_layout)
         main_layout.addLayout(button_layout)
 
+        self.setCentralWidget(central_widget)
+
+        # --- Selection Popup ---
+        self.version_list = _VersionPopup(self)
+
         # --- Connections ---
-        self.entity_combobox.currentIndexChanged.connect(self._populate_scene_name_list)
-        self.entity_combobox.currentIndexChanged.connect(self._populate_version_list)
-        self.entity_combobox.currentIndexChanged.connect(
-            self._update_file_to_open_display
-        )
         self.scene_list.itemSelectionChanged.connect(self._populate_version_list)
         self.scene_list.itemSelectionChanged.connect(self._update_file_to_open_display)
+        self.scene_list.itemSelectionChanged.connect(self._refocus_open_button)
         self.version_list.itemSelectionChanged.connect(
             self._update_file_to_open_display
         )
+        self.version_list.itemSelectionChanged.connect(
+            self._display_if_selected_version_is_latest
+        )
+        self.version_list.itemSelectionChanged.connect(self._refocus_open_button)
         self.open_button.clicked.connect(self.open_workfile)
         self.cancel_button.clicked.connect(self.close_window)
 
+        # Right-click on scene_list
+        self.scene_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.scene_list.customContextMenuRequested.connect(
+            self._show_version_popup
+        )
+
         # Initiate the UI datas
-        self._populate_entity_list()
+        self._populate_scene_name_list()
 
-    def _populate_entity_list(self):
-        """
-        Populate the entity combobox with entities related to the current context.
-        The closest matches to the current entity are placed first.
-        """
-        self.entity_combobox.clear()
 
-        if isinstance(self.context, Asset):
-            tmp_context = get_context(
-                project=self.context.project, category=self.context.asset_type
-            )
-            items_to_add = find_closest_strings(
-                self.context.name,
-                [asset.name for asset in tmp_context.assets],
-            )
-            self.entity_combobox.addItems(items_to_add)
+    def _show_version_popup(self, pos):
+        item = self.scene_list.itemAt(pos)
+
+        # Only show popup if right-clicking an item
+        if item is None:
             return
 
-        if isinstance(self.context, Shot):
-            tmp_context = get_context(
-                project=self.context.project, category=self.context.sequence
-            )
-            items_to_add = find_closest_strings(
-                self.context.name,
-                [shot.name for shot in tmp_context.shots],
-            )
-            self.entity_combobox.addItems(items_to_add)
+        # Ensure item becomes current
+        if self.scene_list.currentItem() != item:
+            self.scene_list.setCurrentItem(item)
+            self._populate_version_list()
+
+        if self.version_list.count() == 0:
             return
+
+        # Resize popup to content
+        self.version_list.adjustSize()
+
+        # Position at the global position of the right-click
+        self.version_list.move(self.scene_list.viewport().mapToGlobal(pos))
+
+        self.version_list.show()
+        self.version_list.setFocus()
+
 
     def _populate_scene_name_list(self):
         """
@@ -177,45 +232,41 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         self.scene_list.clear()
 
         if isinstance(self.context, Asset):
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "asset_type": self.context.asset_type,
-                    "asset_name": self.entity_combobox.currentText(),
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "asset_type": self.context.asset_type.name,
+                    "asset_name": self.context.name,
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": DEFAULT_FILENAME,
                     "version": "v000",
                 }
-            ).from_data()
+            )
 
         else:
             # Shot context
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "sequence": self.context.sequence,
-                    "shot": self.entity_combobox.currentText(),
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "sequence": self.context.sequence.name,
+                    "shot": self.context.name,
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": DEFAULT_FILENAME,
                     "version": "v000",
                 }
-            ).from_data()
+            )
 
-        existing_scene_files = [
-            ProductionPath(file) for file in filepath.parent.glob(f"*.{self.extension}")
-        ]
-        existing_scene_names = set()
+        scene_names = get_existing_scene_names(filepath.parent, self.extension)
 
-        for file in existing_scene_files:
-            datas = file.as_data()
-            existing_scene_names.add(datas["scene_name"])
-
-        if existing_scene_names:
-            self.scene_list.addItems(list(existing_scene_names))
+        if scene_names:
+            self.scene_list.addItems(scene_names)
+            self.scene_list.setCurrentRow(0)
 
     @QtCore.Slot()
     def _populate_version_list(self):
@@ -232,47 +283,53 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         selected_items = self.scene_list.selectedItems()
         if not selected_items:
             return
-        selected_scene_name = selected_items[0].text()
+        selected_scene_name = selected_items[0].text().removesuffix(" (latest)")
 
         # Get all available versions for the selected scene name
         if isinstance(self.context, Asset):
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "asset_type": self.context.asset_type,
-                    "asset_name": self.entity_combobox.currentText(),
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "asset_type": self.context.asset_type.name,
+                    "asset_name": self.context.name,
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": selected_scene_name,
                     "version": "v*",
                 }
-            ).from_data()
+            )
 
         else:
             # Shot context
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "sequence": self.context.sequence,
-                    "shot": self.entity_combobox.currentText(),
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "sequence": self.context.sequence.name,
+                    "shot": self.context.name,
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": selected_scene_name,
                     "version": "v*",
                 }
-            ).from_data()
+            )
 
-        versions = sorted(filepath.parent.glob(filepath.name), reverse=True)
+        versions = get_existing_scene_versions(filepath.parent, selected_scene_name, self.extension)
+        print("# DEBUG - %s"%selected_scene_name)
+        print("# DEBUG - %s"%versions)
+        print("# DEBUG - %s"%filepath.parent)
 
         if not versions:
             return
 
-        versions[0] = f"(latest) {versions[0]}"
+        versions = sorted(versions, reverse=True)
 
         # Populate the version list widget with the available versions
         self.version_list.addItems(versions)
+        self.version_list.setCurrentRow(0)
 
     @QtCore.Slot()
     def _update_file_to_open_display(self):
@@ -285,36 +342,57 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         self.file_to_open_display.clear()
 
         if isinstance(self.context, Asset):
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "asset_type": self.context.asset_type,
-                    "asset_name": self.entity_combobox.currentText(),
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "asset_type": self.context.asset_type.name,
+                    "asset_name": self.context.name,
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
-                    "scene_name": DEFAULT_FILENAME,
-                    "version": "v000",
+                    "ext": self.extension,
+                    "scene_name": self.scene_list.currentItem().text().removesuffix(" (latest)"),
+                    "version": self.version_list.currentItem().text(),
                 }
-            ).from_data()
+            )
 
         else:
             # Shot context
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "sequence": self.context.sequence,
-                    "shot": self.entity_combobox.currentText(),
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "sequence": self.context.sequence.name,
+                    "shot": self.context.name,
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
-                    "scene_name": DEFAULT_FILENAME,
-                    "version": "v000",
+                    "ext": self.extension,
+                    "scene_name": self.scene_list.currentItem().text().removesuffix(" (latest)"),
+                    "version": self.version_list.currentItem().text(),
                 }
-            ).from_data()
+            )
 
-        filepath = filepath.parent / self.version_list.currentItem().text()
-        self.file_to_open_display.setText(filepath.as_posix())
+        if filepath.exists():
+            self.file_to_open_display.setText(filepath.as_posix())
+
+    def _display_if_selected_version_is_latest(self):
+        scene_item = self.scene_list.currentItem()
+        scene_item_text = scene_item.text()
+        scene_item.setText(scene_item_text.removesuffix(" (latest)"))
+
+        if self.version_list.currentRow() == 0:
+            scene_item.setText(scene_item.text() + " (latest)")
+        else:
+            scene_item.setText(scene_item.text().removesuffix(" (latest)"))
+
+    def _refocus_open_button(self):
+        self.open_button.setFocus()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+
+        self.open_button.setDefault(True)
+        self.open_button.setFocus()
 
     @QtCore.Slot()
     @abstractmethod
@@ -342,7 +420,7 @@ class FileOpenWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         self.close()
 
 
-class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
+class FileSaveWindow(QtWidgets.QMainWindow, metaclass=QABCMeta):
     """
     Base window for creating and saving production workfiles.
 
@@ -370,7 +448,9 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         self.software = software
         self.extension = extension.lower().lstrip(".")
 
-        if not isinstance(self.context, Asset) or not isinstance(self.context, Shot):
+        self.root = ProductionPath._canonical_roots["/L33D/"][platform.system().lower()]
+
+        if not isinstance(self.context, Asset) and not isinstance(self.context, Shot):
             raise RuntimeError(
                 "Save file is not supported in this context. Must be an Asset or a Shot context."
             )
@@ -381,8 +461,8 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
             )
 
         self.setWindowTitle("Save Production Workfile")
-        self.resize(*OPEN_WINDOW_SIZE)
-        self.setMinimumSize(*OPEN_WINDOW_SIZE)
+        self.resize(*SAVE_WINDOW_SIZE)
+        self.setMinimumSize(*SAVE_WINDOW_SIZE)
         self.setWindowIcon(
             QtGui.QIcon(os.path.join(Path(__file__).parent, "icons", "piktura.png"))
         )
@@ -390,7 +470,6 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         # --- Widgets ---
         self.entity_label = QtWidgets.QLabel("Entity :")
         self.entity_combobox = QtWidgets.QComboBox()
-        self.entity_combobox.setMaxVisibleItems(MAX_ENTITY_DISPLAY)
 
         self.scene_label = QtWidgets.QLabel("Scene name :")
         self.scene_input = QtWidgets.QLineEdit()
@@ -437,12 +516,15 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.save_button)
 
-        main_layout = QtWidgets.QVBoxLayout(self)
+        central_widget = QtWidgets.QWidget()
+        main_layout = QtWidgets.QVBoxLayout(central_widget)
         main_layout.addLayout(entity_layout)
         main_layout.addLayout(scene_layout)
         main_layout.addLayout(version_layout)
         main_layout.addLayout(file_layout)
         main_layout.addLayout(button_layout)
+
+        self.setCentralWidget(central_widget)
 
         # --- Connections ---
         self.entity_combobox.currentIndexChanged.connect(self._update_version_spinbox)
@@ -470,24 +552,24 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
 
         if isinstance(self.context, Asset):
             tmp_context = get_context(
-                project=self.context.project, category=self.context.asset_type
+                project=self.context.project.name, category=self.context.asset_type.name
             )
-            items_to_add = find_closest_strings(
-                self.context.name,
-                [asset.name for asset in tmp_context.assets],
-            )
-            self.entity_combobox.addItems(items_to_add)
+            # items_to_add = find_closest_strings(
+            #     self.context.name,
+            #     [asset.name for asset in tmp_context.assets],
+            # )
+            # self.entity_combobox.addItems(items_to_add)
             return
 
         if isinstance(self.context, Shot):
             tmp_context = get_context(
-                project=self.context.project, category=self.context.sequence
+                project=self.context.project.name, category=self.context.sequence.name
             )
-            items_to_add = find_closest_strings(
-                self.context.name,
-                [shot.name for shot in tmp_context.shots],
-            )
-            self.entity_combobox.addItems(items_to_add)
+            # items_to_add = find_closest_strings(
+            #     self.context.name,
+            #     [shot.name for shot in tmp_context.shots],
+            # )
+            # self.entity_combobox.addItems(items_to_add)
             return
 
     def _update_version_spinbox(self):
@@ -501,33 +583,35 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         """
         # Get all available versions for the selected scene name
         if isinstance(self.context, Asset):
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "asset_type": self.context.asset_type,
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "asset_type": self.context.asset_type.name,
                     "asset_name": self.entity_combobox.currentText(),
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": self.scene_input.text(),
                     "version": "v*",
                 }
-            ).from_data()
+            )
 
         else:
             # Shot context
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "sequence": self.context.sequence,
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "sequence": self.context.sequence.name,
                     "shot": self.entity_combobox.currentText(),
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": self.scene_input.text(),
                     "version": "v*",
                 }
-            ).from_data()
+            )
 
         versions = sorted(filepath.parent.glob(filepath.name), reverse=True)
 
@@ -535,7 +619,8 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
             self.version_spinbox.setValue(1)
             return
 
-        self.version_spinbox.setValue(int(versions[0][1:]) + 1)
+        versions = [Path(version.name).stem.split("_")[-1].lstrip("v") for version in versions]
+        self.version_spinbox.setValue(int(versions[0]) + 1)
 
     @QtCore.Slot()
     def _update_file_to_save_display(self):
@@ -549,33 +634,35 @@ class FileSaveWindow(QtWidgets.QWidget, metaclass=QABCMeta):
         self.file_to_save_display.clear()
 
         if isinstance(self.context, Asset):
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "asset_type": self.context.asset_type,
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "asset_type": self.context.asset_type.name,
                     "asset_name": self.entity_combobox.currentText(),
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": self.scene_input.text(),
                     "version": f"v{self.version_spinbox.value():03d}",
                 }
-            ).from_data()
+            )
 
         else:
             # Shot context
-            filepath = ProductionPath(
+            filepath = ProductionPath.from_data(
                 {
-                    "project": self.context.project,
-                    "sequence": self.context.sequence,
+                    "mount": self.root,
+                    "project": self.context.project.name,
+                    "sequence": self.context.sequence.name,
                     "shot": self.entity_combobox.currentText(),
                     "step": self.context.step,
                     "software": self.software,
-                    "extension": self.extension,
+                    "ext": self.extension,
                     "scene_name": self.scene_input.text(),
                     "version": f"v{self.version_spinbox.value():03d}",
                 }
-            ).from_data()
+            )
 
         self.file_to_save_display.setText(filepath.as_posix())
 

@@ -24,6 +24,7 @@ class MayaFileOpenWindow(FileOpenWindow):
         filepath = super().open_workfile()
         cmds.file(filepath, open=True)
         OpenMaya.MGlobal.displayInfo(f"Opened {filepath}")
+        self.close_window()
 
     def close_window(self):
         OpenMaya.MGlobal.displayInfo("Closing workfile manager.")
@@ -39,6 +40,7 @@ class MayaFileSaveWindow(FileSaveWindow):
         cmds.file(rename=filepath)
         cmds.file(save=True, force=True)
         OpenMaya.MGlobal.displayInfo(f"Saved {filepath}")
+        self.close_window()
 
     def close_window(self):
         OpenMaya.MGlobal.displayInfo("Closing workfile manager.")
