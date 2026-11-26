@@ -14,9 +14,24 @@ def build(source_path, build_path, install_path, targets):
         if not os.path.exists(dest_py):
             shutil.copytree(src_py, dest_py)
 
+        # maya python source
+        src_py = os.path.join(source_path, "maya", "python")
+        dest_py = os.path.join(build_path, "maya", "python")
+
+        if not os.path.exists(dest_py):
+            shutil.copytree(src_py, dest_py)
+
     def _install():
         src = os.path.join(build_path, "python")
         dest = os.path.join(install_path, "python")
+
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+
+        shutil.copytree(src, dest)
+
+        src = os.path.join(build_path, "maya", "python")
+        dest = os.path.join(install_path, "maya", "python")
 
         if os.path.exists(dest):
             shutil.rmtree(dest)

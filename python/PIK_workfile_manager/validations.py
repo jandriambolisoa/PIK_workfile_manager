@@ -1,10 +1,9 @@
-from pathlib import Path
+import re
 
-def valid_folder_path(folder_path: str) -> Path:
-    if Path(folder_path).is_dir():
-        return Path(folder_path)
+# TODO : Implement scene name validation
+
+def valid_scene_name(scene_name: str) -> str:
+    if bool(re.fullmatch(r"[A-Za-z_]+", scene_name)):
+        return scene_name
     else:
-        raise ValueError(f"Invalid folder path: {folder_path}")
-
-def valid_extension(extension: str):
-    return extension.lower().lstrip('.')
+        raise ValueError(f"Invalid scene name: {scene_name}")
