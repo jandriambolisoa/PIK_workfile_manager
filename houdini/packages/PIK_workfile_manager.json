@@ -1,0 +1,20 @@
+{  
+    "enable" : true,  
+    "env" : [  
+        {  
+            "PIK_WORKFILE_MANAGER_HOUDINI_TOOLS" : "$HOUDINI_PACKAGE_PATH/../.."
+        },  
+        {  
+            "HOUDINI_PATH" : {  
+                "value" : ["$PIK_WORKFILE_MANAGER_HOUDINI_TOOLS/houdini"],
+                "method" : "prepend"  
+            }  
+        },  
+        {  
+            "HOUDINI_MENU_PATH" : {  
+                "value" : ["$PIK_WORKFILE_MANAGER_HOUDINI_TOOLS/houdini/menus"],
+                "method" : "prepend"  
+            }  
+        }  
+    ]  
+}

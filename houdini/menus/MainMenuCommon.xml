@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mainMenu>
+  <menuBar>
+      <subMenu id="PikWorkfileManagerTools">
+      <label>Workfile Manager</label>
+      <scriptItem>
+        <label>Open File...</label>
+        <scriptCode><![CDATA[
+from PIK_workfile_manager_houdini import open_scene
+open_scene()
+        ]]></scriptCode>
+      </scriptItem>
+      <scriptItem>
+        <label>Save File...</label>
+        <scriptCode><![CDATA[
+from PIK_workfile_manager_houdini import save_scene
+save_scene()
+        ]]></scriptCode>
+      </scriptItem>
+      </subMenu>
+    </menuBar>
+</mainMenu>

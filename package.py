@@ -11,7 +11,7 @@ description = \
     A cross-DCC workfile manager for Piktura's pipeline.
     """
 
-variants = [["maya-2027"]]
+variants = [["maya-2027", "python-3.13"], ["houdini-21", "python-3.11"]]
 
 requires = [
     "rez_production_context",
@@ -28,3 +28,7 @@ def commands():
     if "maya" in resolve:
         env.PYTHONPATH.append("{root}/maya/python")
         env.PYTHONPATH.append("{root}/maya/python/PIK_workfile_manager_maya")
+
+    if "houdini" in resolve:
+        env.PYTHONPATH.append("{root}/houdini/python")
+        env.HOUDINI_PACKAGE_DIR.append("{root}/houdini/packages")
