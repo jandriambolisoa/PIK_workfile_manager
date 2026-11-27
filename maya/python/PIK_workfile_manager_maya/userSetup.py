@@ -1,8 +1,18 @@
 from maya import cmds, OpenMaya, mel
 
 MENU_NAME = "Workfile Manager"
+"""
+Name of the custom Maya menu displayed in the main menu bar.
+"""
 
 def setup():
+    """
+    Create and register the Workfile Manager menu in Maya.
+
+    If a menu with the same name already exists, it is removed
+    and recreated. The menu provides quick access to the
+    workfile open and save tools.
+    """
     gMainWindow = mel.eval("$tmpVar = $gMainWindow")
 
     if cmds.menu(MENU_NAME, exists=True):
