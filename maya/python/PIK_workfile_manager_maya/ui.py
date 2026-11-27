@@ -10,7 +10,7 @@ from PIK_workfile_manager.ui.base import BaseOpenWindow, BaseSaveWindow
 class MayaOpenWorkfileWindow(BaseOpenWindow):
 
     def __init__(self):
-        self.backend = MayaCore()
+        self.backend = MayaCore() # TODO : move backend and ui association to __init__
 
         self.backend.workfile_open.connect(self.backend.open_workfile)
 
