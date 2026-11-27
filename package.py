@@ -15,7 +15,7 @@ variants = [["maya-2027"]]
 
 requires = [
     "rez_production_context",
-    "PIK_path_manager"
+    "PIK_path_manager-0.1.4+"
 ]
 
 uuid = "piktura.workfile_manager"

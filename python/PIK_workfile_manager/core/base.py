@@ -31,7 +31,6 @@ class BaseCore(QObject):
         if isinstance(self.context, Asset):
             filepath = ProductionPath.from_data(
                 {
-                    "mount": "/L33D",#self.context.root, # TODO: This is an anticipation of PIK_path_manager update
                     "project": self.context.project.name,
                     "asset_type": self.context.asset_type.name,
                     "asset_name": self.context.name,
@@ -47,7 +46,6 @@ class BaseCore(QObject):
             # Shot context
             filepath = ProductionPath.from_data(
                 {
-                    "mount": "/L33D",#self.context.root, # TODO: This is an anticipation of PIK_path_manager update
                     "project": self.context.project.name,
                     "sequence": self.context.sequence.name,
                     "shot": self.context.name,
@@ -85,7 +83,6 @@ class BaseCore(QObject):
         if isinstance(self.context, Asset):
             return ProductionPath.from_data(
                 {
-                    "mount": "/L33D",#self.context.root, # TODO: This is an anticipation of PIK_path_manager update
                     "project": self.context.project.name,
                     "asset_type": self.context.asset_type.name,
                     "asset_name": self.context.name,
@@ -101,7 +98,6 @@ class BaseCore(QObject):
             # Shot context
             return ProductionPath.from_data(
                 {
-                    "mount": "/L33D",#self.context.root, # TODO: This is an anticipation of PIK_path_manager update
                     "project": self.context.project.name,
                     "sequence": self.context.sequence.name,
                     "shot": self.context.name,

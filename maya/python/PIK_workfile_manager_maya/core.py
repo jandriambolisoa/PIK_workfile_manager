@@ -1,9 +1,10 @@
+from PySide6.QtWidgets import QWidget
 from pathlib import Path
+from shiboken6 import wrapInstance
 
 from maya import cmds, OpenMaya, OpenMayaUI
 
 from PIK_workfile_manager.core.base import BaseCore
-
 
 class MayaCore(BaseCore):
 
@@ -43,3 +44,11 @@ class MayaCore(BaseCore):
             to_create.mkdir(parents=True, exist_ok=True)
 
 
+def get_maya_main_window():
+    """
+    Get the maya main window object.
+    Returns:
+        class: `QWidget`: The maya main window object.
+    """
+    main_window_ptr = OpenMayaUI.MQtUtil.mainWindow()
+    return wrapInstance(int(main_window_ptr), QWidget)

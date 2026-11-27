@@ -44,10 +44,10 @@ class _VersionPopup(QtWidgets.QListWidget):
 
 class BaseOpenWindow(QMainWindow):
 
-    backend: BaseCore
-
-    def __init__(self, parent=None):
+    def __init__(self, backend: BaseCore | None = None, parent=None):
         super().__init__(parent)
+
+        self.backend = backend
 
         self.setWindowIcon(
             QtGui.QIcon(os.path.join(Path(__file__).parent, "icons", "piktura.png"))
@@ -120,6 +120,7 @@ class BaseOpenWindow(QMainWindow):
         )
 
         # --- Connections ---
+        self.backend.workfile_open.connect(self.backend.open_workfile)
         self.backend.workfile_open.connect(self.close)
         self.open_button.clicked.connect(self._open_workfile)
         self.open_button.clicked.connect(self.close)
@@ -191,10 +192,10 @@ class BaseOpenWindow(QMainWindow):
 
 class BaseSaveWindow(QMainWindow):
 
-    backend: BaseCore
-
-    def __init__(self, parent=None):
+    def __init__(self, backend: BaseCore | None = None, parent=None):
         super().__init__(parent)
+
+        self.backend = backend
 
         self.setWindowIcon(
             QtGui.QIcon(os.path.join(Path(__file__).parent, "icons", "piktura.png"))
@@ -265,6 +266,8 @@ class BaseSaveWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         # --- Connections ---
+        self.backend.workfile_save.connect(self.backend._refresh_scenes)
+        self.backend.workfile_save.connect(self.backend.save_workfile)
         self.backend.workfile_save.connect(self.close)
         self.scene_input.textChanged.connect(self._update_version_spinbox)
         self.version_spinbox.valueChanged.connect(self._update_file_to_save_display)
