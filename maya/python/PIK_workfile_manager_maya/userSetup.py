@@ -1,6 +1,6 @@
 from maya import cmds, OpenMaya, mel
 
-MENU_NAME = "PIK-File"
+MENU_NAME = "Workfile Manager"
 
 def setup():
     gMainWindow = mel.eval("$tmpVar = $gMainWindow")

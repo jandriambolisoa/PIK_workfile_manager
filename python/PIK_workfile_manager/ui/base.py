@@ -260,7 +260,7 @@ class BaseSaveWindow(QMainWindow):
         main_layout.addLayout(context_layout)
         main_layout.addLayout(scene_layout)
         main_layout.addLayout(version_layout)
-        main_layout.addLayout(file_layout)
+        main_layout.addLayout(file_layout, stretch=1)
         main_layout.addLayout(button_layout)
 
         self.setCentralWidget(central_widget)
@@ -285,9 +285,7 @@ class BaseSaveWindow(QMainWindow):
 
     def _update_version_spinbox(self):
         filepath = self.backend._next_version(self.scene_input.text())
-        print("# DEBUG - %s"%filepath)
         version_value = self.backend._get_scene_version_value(filepath)
-        print("# DEBUG - %s"%version_value)
         self.version_spinbox.setValue(version_value)
 
     def _update_file_to_save_display(self):
